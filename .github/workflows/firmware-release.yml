@@ -1,0 +1,71 @@
+name: Build and Release Firmware
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+
+    - name: Install PlatformIO
+      run: pip install platformio
+
+    - name: Build firmware
+      run: pio run
+
+    - name: Find firmware file
+      run: |
+        FIRMWARE_PATH=$(find . -name "*.bin" | head -n 1)
+        echo "FIRMWARE_PATH=$FIRMWARE_PATH" >> $GITHUB_ENV
+        echo "FIRMWARE_NAME=$(basename $FIRMWARE_PATH)" >> $GITHUB_ENV
+
+    - name: Upload firmware artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: firmware-bin
+        path: ${{ env.FIRMWARE_PATH }}
+
+    - name: Create GitHub Release
+      id: create_release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ github.ref_name }}
+        name: Release ${{ github.ref_name }}
+        body: |
+          Firmware build for ${{ github.ref_name }}
+        draft: false
+        prerelease: false
+
+    - name: Upload firmware to release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: ${{ env.FIRMWARE_PATH }}
+        tag_name: ${{ github.ref_name }}
+
+    - name: Publish MQTT notification
+      env:
+        FIRMWARE_URL: "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/${{ env.FIRMWARE_NAME }}"
+      run: |
+        pip install paho-mqtt
+        python3 -c "
+        import paho.mqtt.publish as publish
+        publish.single(
+            'firmware/updates',
+            '{\"version\": \"${{ github.ref_name }}\", \"url\": \"$FIRMWARE_URL\"}',
+            hostname='broker.hivemq.com',
+            port=1883
+        )
+        print('MQTT notification sent for version ${{ github.ref_name }}')
+        
