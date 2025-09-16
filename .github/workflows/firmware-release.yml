@@ -15,17 +15,15 @@ jobs:
         run: echo Hello, world!
       
       - name: list all files
-       run: ls
+        run: ls
 
-
-      -name: install python
-       uses: actions/setup-python@v2
-       with:
+      - name: installpython
+        uses: actions/setup-python@v2
+        with:
          python-version: '3.8'
 
-      -name: run python script
-       run: python creat_file.py
+      - name: run python script
+        run: python creat_file.py
        
-      -name: list all new files
-      run: ls
-             
+      - name: list all new files
+        run: ls
