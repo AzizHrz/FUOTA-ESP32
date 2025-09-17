@@ -1,44 +1,73 @@
-name: Build Firmware on Release
+name: Build and Release Firmware
 
 on:
-  release:
-    types: [published] # The key trigger: when a release is published
+  push:
+    branches: [ master ]
+    tags:
+      - 'v*'
+  #workflow_dispatch:
 
 jobs:
-  build-platformio:
+  build:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        # Build for multiple environments at once (e.g., different boards)
-        #env: [uno, nano, esp32dev] # Replace with your actual PIO environments
-        env: [esp32dev]
-    name: Build for ${{ matrix.env }}
+
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+    - name: Checkout code
+      uses: actions/checkout@v3
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.9'
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
 
-      - name: Install PlatformIO Core
-        run: pip install platformio
+    - name: Install PlatformIO
+      run: pip install platformio
 
-      - name: Build Firmware
-        run: pio run -e ${{ matrix.env }}
+    - name: Build firmware
+      run: pio run
 
-      - name: Collect firmware files
-        run: |
-          mkdir -p firmware/${{ matrix.env }}
-          cp .pio/build/${{ matrix.env }}/firmware.bin firmware/${{ matrix.env }}/
+    - name: Find firmware file
+      run: |
+        FIRMWARE_PATH=$(find . -name "*.bin" | head -n 1)
+        echo "FIRMWARE_PATH=$FIRMWARE_PATH" >> $GITHUB_ENV
+        echo "FIRMWARE_NAME=$(basename $FIRMWARE_PATH)" >> $GITHUB_ENV
 
-      - name: Upload Firmware as Release Asset
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # This is automatically provided
-        with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: firmware/${{ matrix.env }}/firmware.bin
-          asset_name: firmware_${{ matrix.env }}_${{ github.ref_name }}.bin
-          asset_content_type: application/octet-stream
+    - name: Upload firmware artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: firmware-bin
+        path: ${{ env.FIRMWARE_PATH }}
+
+    - name: Create GitHub Release
+      id: create_release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ github.ref_name }}
+        name: Release ${{ github.ref_name }}
+        body: |
+          Firmware build for ${{ github.ref_name }}
+        draft: false
+        prerelease: false
+
+    - name: Upload firmware to release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: ${{ env.FIRMWARE_PATH }}
+        tag_name: ${{ github.ref_name }}
+
+    - name: Publish MQTT notification
+      env:
+        FIRMWARE_URL: "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/${{ env.FIRMWARE_NAME }}"
+      run: |
+        pip install paho-mqtt
+        python3 -c "
+        import paho.mqtt.publish as publish
+        publish.single(
+            'firmware/updates',
+            '{\"version\": \"${{ github.ref_name }}\", \"url\": \"$FIRMWARE_URL\"}',
+            hostname='broker.hivemq.com',
+            port=1883
+        )
+        print('MQTT notification sent for version ${{ github.ref_name }}')
+        
+        
