@@ -44,6 +44,7 @@ jobs:
         name: firmware-bin
         path: ${{ env.FIRMWARE_PATH }}
 
+#change github settings/actions/workflow_permissions to allow write permission to actions
     - name: Create GitHub Release (only for tags)
       if: startsWith(github.ref, 'refs/tags/') # Only run for tags, not branch pushes
       id: create_release
