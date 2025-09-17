@@ -1,0 +1,44 @@
+name: Build Firmware on Release
+
+on:
+  release:
+    types: [published] # The key trigger: when a release is published
+
+jobs:
+  build-platformio:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # Build for multiple environments at once (e.g., different boards)
+        #env: [uno, nano, esp32dev] # Replace with your actual PIO environments
+        env: [esp32dev]
+    name: Build for ${{ matrix.env }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
+
+      - name: Install PlatformIO Core
+        run: pip install platformio
+
+      - name: Build Firmware
+        run: pio run -e ${{ matrix.env }}
+
+      - name: Collect firmware files
+        run: |
+          mkdir -p firmware/${{ matrix.env }}
+          cp .pio/build/${{ matrix.env }}/firmware.bin firmware/${{ matrix.env }}/
+
+      - name: Upload Firmware as Release Asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # This is automatically provided
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: firmware/${{ matrix.env }}/firmware.bin
+          asset_name: firmware_${{ matrix.env }}_${{ github.ref_name }}.bin
+          asset_content_type: application/octet-stream
